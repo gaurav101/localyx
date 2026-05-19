@@ -12,6 +12,7 @@ import {
   Star,
   Sun,
   Moon,
+  Scale,
 } from 'lucide-react';
 import { BasicStateCard } from './components/BasicStateCard';
 import { TTLSessionCard } from './components/TTLSessionCard';
@@ -124,6 +125,17 @@ function App() {
             <p>
               Built entirely in TypeScript with defensive SSR execution guard rails, guaranteeing
               zero server-rendering crashes.
+            </p>
+          </div>
+
+          <div className="feature-item">
+            <div className="feature-item-icon">
+              <Scale size={20} />
+            </div>
+            <h4>Featherweight Footprint</h4>
+            <p>
+              Low size, high impact: only <strong>754B</strong> minified + gzipped (and 1.5 kB
+              minified) with zero dependencies.
             </p>
           </div>
         </div>

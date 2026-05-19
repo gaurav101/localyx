@@ -456,6 +456,10 @@ button.danger:hover {
   background: rgba(16, 185, 129, 0.1);
   color: #10b981;
 }
+.feature-item:nth-child(5) .feature-item-icon {
+  background: rgba(244, 63, 94, 0.1);
+  color: #f43f5e;
+}
 
 .feature-item h4 {
   margin: 0 0 0.5rem 0;

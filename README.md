@@ -1,6 +1,14 @@
 # @gks101/localyx
 
+[![npm bundle size](https://img.shields.io/bundlephobia/minzip/@gks101/localyx/1.0.0)](https://bundlephobia.com/package/@gks101/localyx@1.0.0)
+[![tree-shakable](https://img.shields.io/badge/tree--shakable-yes-brightgreen)](https://bundlephobia.com/package/@gks101/localyx@1.0.0)
+[![npm license](https://img.shields.io/npm/l/@gks101/localyx)](https://github.com/gaurav101/localyx/blob/main/LICENSE)
+
 A robust React hook for managing state in `localStorage` with built-in support for TTL (Time to Live) and cross-tab synchronization.
+
+**Low Size, High Impact:** Featherweight footprint (**754B** Minified + Gzipped, **1.5 kB** Minified) with zero dependencies.
+
+**🔗 [Live Demo](https://localyx.vercel.app/)** | **📦 [GitHub Repository](https://github.com/gaurav101/localyx/)**
 
 ## Features
 

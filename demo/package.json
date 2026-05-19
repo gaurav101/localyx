@@ -10,8 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@gks101/localyx": "file:..",
-    "lucide-react": "^1.16.0",
+    "@gks101/localyx": "../gks101-localyx-1.0.0.tgz",
+    "lucide-react": "^0.468.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
   },

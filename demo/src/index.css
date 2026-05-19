@@ -21,6 +21,16 @@
   --label-color: #94a3b8;
   --subtitle-color: #94a3b8;
   --code-editor-bg: #0b0c10;
+  --code-editor-text: #e2e8f0;
+  --code-editor-border: rgba(255, 255, 255, 0.05);
+  --code-editor-header: rgba(20, 22, 31, 0.4);
+  --code-token-keyword: #f43f5e;
+  --code-token-string: #10b981;
+  --code-token-comment: #64748b;
+  --code-token-function: #3b82f6;
+  --code-token-type: #f59e0b;
+  --code-token-number: #a78bfa;
+  --code-token-punctuation: #94a3b8;
   --title-color: #ffffff;
   --input-bg: rgba(0, 0, 0, 0.2);
   --input-border: rgba(255, 255, 255, 0.1);
@@ -39,7 +49,17 @@
   --value-color: #0f172a;
   --label-color: #475569;
   --subtitle-color: #475569;
-  --code-editor-bg: #111216;
+  --code-editor-bg: #f1f5f9;
+  --code-editor-text: #1e293b;
+  --code-editor-border: rgba(15, 23, 42, 0.08);
+  --code-editor-header: rgba(15, 23, 42, 0.04);
+  --code-token-keyword: #d01d4c;
+  --code-token-string: #0f766e;
+  --code-token-comment: #64748b;
+  --code-token-function: #1d4ed8;
+  --code-token-type: #b45309;
+  --code-token-number: #7c3aed;
+  --code-token-punctuation: #475569;
   --title-color: #1e1b4b;
   --input-bg: rgba(255, 255, 255, 0.9);
   --input-border: rgba(15, 23, 42, 0.1);
@@ -246,21 +266,26 @@ button.danger:hover {
 /* Code Editor Styling */
 .code-editor {
   background: var(--code-editor-bg);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--code-editor-border);
   border-radius: 12px;
   overflow: hidden;
   margin-top: auto;
   box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
-  transition: background 0.3s ease;
+  transition:
+    background 0.3s ease,
+    border 0.3s ease;
 }
 
 .code-editor-header {
-  background: rgba(20, 22, 31, 0.4);
+  background: var(--code-editor-header);
   padding: 8px 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--code-editor-border);
+  transition:
+    background 0.3s ease,
+    border 0.3s ease;
 }
 
 .code-editor-dots {
@@ -298,30 +323,39 @@ button.danger:hover {
   line-height: 1.4;
   overflow-x: auto;
   white-space: pre;
+  color: var(--code-editor-text);
+  transition: color 0.3s ease;
 }
 
 /* Syntax Highlighting */
 .token-keyword {
-  color: #f43f5e;
+  color: var(--code-token-keyword);
+  transition: color 0.3s ease;
 }
 .token-string {
-  color: #10b981;
+  color: var(--code-token-string);
+  transition: color 0.3s ease;
 }
 .token-comment {
-  color: #64748b;
+  color: var(--code-token-comment);
   font-style: italic;
+  transition: color 0.3s ease;
 }
 .token-function {
-  color: #3b82f6;
+  color: var(--code-token-function);
+  transition: color 0.3s ease;
 }
 .token-type {
-  color: #f59e0b;
+  color: var(--code-token-type);
+  transition: color 0.3s ease;
 }
 .token-number {
-  color: #a78bfa;
+  color: var(--code-token-number);
+  transition: color 0.3s ease;
 }
 .token-punctuation {
-  color: #94a3b8;
+  color: var(--code-token-punctuation);
+  transition: color 0.3s ease;
 }
 
 /* Hero & Branding */

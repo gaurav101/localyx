@@ -45,6 +45,17 @@
   ],
   "author": "Gaurav",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gaurav101/localyx.git"
+  },
+  "bugs": {
+    "url": "https://github.com/gaurav101/localyx/issues"
+  },
+  "homepage": "https://localyx.vercel.app/",
+  "publishConfig": {
+    "access": "public"
+  },
   "peerDependencies": {
     "react": ">=16.8.0",
     "react-dom": ">=16.8.0"

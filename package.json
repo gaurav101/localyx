@@ -1,6 +1,6 @@
 {
   "name": "@gks101/localyx",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "A React hook for robust local storage state management with TTL and cross-tab sync.",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",

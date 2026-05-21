@@ -1,16 +1,20 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-
-// ─── Types ────────────────────────────────────────────────────────────────────
+import { useState, useEffect, useCallback } from 'react';
 
 interface StorageEntry<T> {
-  v: T; // value
-  t?: number; // timestamp (ms) when written
+  v: T;
+  t?: number;
 }
 
+export type TtlStrategy = 'absolute' | 'sliding';
+
 export interface UseLocalStorageStateOptions<T> {
-  ttl?: number; // ms until expiry; omit = never
-  encrypt?: (raw: string) => string; // custom serializer / obfuscator
-  decrypt?: (raw: string) => string; // custom deserializer / deobfuscator
+  ttl?: number;
+  ttlStrategy?: TtlStrategy;
+  namespace?: string;
+  onExpire?: (ctx: { key: string; value: T }) => void;
+  now?: () => number;
+  encrypt?: ((raw: string) => string) | null;
+  decrypt?: ((raw: string) => string) | null;
   serializer?: {
     stringify: (v: T) => string;
     parse: (s: string) => T;
@@ -19,7 +23,12 @@ export interface UseLocalStorageStateOptions<T> {
 
 export type SetValue<T> = (v: T | ((prev: T) => T)) => void;
 
-// ─── Lightweight built-in obfuscation (Base64) ────────────────────────────────
+export interface GetRemainingTtlOptions {
+  namespace?: string;
+  decrypt?: ((raw: string) => string) | null;
+  parse?: (s: string) => StorageEntry<unknown>;
+  now?: () => number;
+}
 
 const b64e = (s: string): string => {
   try {
@@ -28,6 +37,7 @@ const b64e = (s: string): string => {
     return s;
   }
 };
+
 const b64d = (s: string): string => {
   try {
     return decodeURIComponent(escape(atob(s)));
@@ -35,8 +45,6 @@ const b64d = (s: string): string => {
     return s;
   }
 };
-
-// ─── SSR-safe localStorage helpers ───────────────────────────────────────────
 
 const isBrowser = (): boolean =>
   typeof window !== 'undefined' && typeof localStorage !== 'undefined';
@@ -53,7 +61,6 @@ function lsWrite(key: string, value: string): void {
   try {
     if (isBrowser()) localStorage.setItem(key, value);
   } catch (e) {
-    // QuotaExceededError — fail silently; state is still accurate in-memory
     if (process.env.NODE_ENV !== 'production') {
       console.warn('[useLocalStorageState] write failed:', e);
     }
@@ -68,99 +75,216 @@ function lsDelete(key: string): void {
   }
 }
 
-// ─── Core hook ───────────────────────────────────────────────────────────────
+const LOCAL_SYNC_EVENT = '__localyx_sync__';
+
+function resolveStorageKey(key: string, namespace?: string): string {
+  return namespace ? `${namespace}:${key}` : key;
+}
+
+function emitLocalSync(key: string, newValue: string | null): void {
+  if (!isBrowser()) return;
+  window.dispatchEvent(new CustomEvent(LOCAL_SYNC_EVENT, { detail: { key, newValue } }));
+}
+
+function parseStorageEntry<T>(
+  raw: string,
+  decode: ((value: string) => string) | undefined,
+  parse: (value: string) => T
+): StorageEntry<T> | null {
+  try {
+    const decoded = decode ? decode(raw) : raw;
+    return parse(decoded) as StorageEntry<T>;
+  } catch {
+    return null;
+  }
+}
+
+export function getRemainingTtl(
+  key: string,
+  ttl: number,
+  options: GetRemainingTtlOptions = {}
+): number | null {
+  const { namespace, decrypt, parse, now } = options;
+  const storageKey = resolveStorageKey(key, namespace);
+  const raw = lsRead(storageKey);
+  if (raw === null) return null;
+
+  const decode = decrypt === null ? undefined : (decrypt ?? b64d);
+  const parseEntry = parse ?? ((s: string) => JSON.parse(s) as StorageEntry<unknown>);
+  const nowFn = now ?? Date.now;
+
+  try {
+    const decoded = decode ? decode(raw) : raw;
+    const entry = parseEntry(decoded);
+    if (entry.t === undefined) return null;
+    return Math.max(0, entry.t + ttl - nowFn());
+  } catch {
+    return null;
+  }
+}
 
 export function useLocalStorageState<T>(
   key: string,
   initialValue: T,
   options: UseLocalStorageStateOptions<T> = {}
 ): [T, SetValue<T>, () => void] {
-  const { ttl, encrypt, decrypt, serializer } = options;
+  const {
+    ttl,
+    ttlStrategy = 'absolute',
+    namespace,
+    onExpire,
+    now,
+    encrypt,
+    decrypt,
+    serializer,
+  } = options;
 
-  // Determine encode / decode pipeline once
-  const encode = encrypt ?? (encrypt === null ? undefined : b64e);
-  const decode = decrypt ?? (decrypt === null ? undefined : b64d);
+  const storageKey = resolveStorageKey(key, namespace);
+  const nowFn = now ?? Date.now;
+  const encode = encrypt === null ? undefined : (encrypt ?? b64e);
+  const decode = decrypt === null ? undefined : (decrypt ?? b64d);
   const stringify = serializer?.stringify ?? JSON.stringify;
   const parse = serializer?.parse ?? JSON.parse;
+  const [expiryTick, setExpiryTick] = useState(0);
 
-  // ── Read from storage (handles TTL + corruption) ─────────────────────────
+  const touchSlidingTtl = useCallback(
+    (entry: StorageEntry<T>) => {
+      if (ttl === undefined || entry.t === undefined || ttlStrategy !== 'sliding') return;
+      const refreshed: StorageEntry<T> = { ...entry, t: nowFn() };
+      const serialized = stringify(refreshed);
+      const raw = encode ? encode(serialized) : serialized;
+      lsWrite(storageKey, raw);
+    },
+    [storageKey, ttl, ttlStrategy, nowFn, stringify, encode]
+  );
+
   const readStorage = useCallback((): T => {
-    const raw = lsRead(key);
+    const raw = lsRead(storageKey);
     if (raw === null) return initialValue;
-    try {
-      const decoded = decode ? decode(raw) : raw;
-      const entry: StorageEntry<T> = parse(decoded);
-      if (ttl !== undefined && entry.t !== undefined) {
-        if (Date.now() > entry.t + ttl) {
-          lsDelete(key);
-          return initialValue;
-        }
-      }
-      return entry.v;
-    } catch {
-      lsDelete(key); // corrupted — wipe it
+    const entry = parseStorageEntry(raw, decode, parse);
+    if (entry === null) {
+      lsDelete(storageKey);
       return initialValue;
     }
-  }, [key, ttl]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (ttl !== undefined && entry.t !== undefined && nowFn() >= entry.t + ttl) {
+      lsDelete(storageKey);
+      if (onExpire) onExpire({ key: storageKey, value: entry.v });
+      return initialValue;
+    }
+    touchSlidingTtl(entry);
+    return entry.v;
+  }, [storageKey, initialValue, decode, parse, ttl, nowFn, onExpire, touchSlidingTtl]);
 
-  // ── State ─────────────────────────────────────────────────────────────────
   const [state, setInternalState] = useState<T>(() => readStorage());
 
-  // Keep a ref so the storage event handler always sees the latest setter
-  const setRef = useRef(setInternalState);
-  useEffect(() => {
-    setRef.current = setInternalState;
-  }, []);
+  const expireEntry = useCallback(
+    (entry: StorageEntry<T>, sync: boolean) => {
+      lsDelete(storageKey);
+      if (onExpire) onExpire({ key: storageKey, value: entry.v });
+      setInternalState(initialValue);
+      if (sync) emitLocalSync(storageKey, null);
+    },
+    [storageKey, initialValue, onExpire, setInternalState]
+  );
 
-  // ── Write to storage ──────────────────────────────────────────────────────
   const setState: SetValue<T> = useCallback(
     (valOrFn) => {
       setInternalState((prev) => {
         const next = typeof valOrFn === 'function' ? (valOrFn as (p: T) => T)(prev) : valOrFn;
         const entry: StorageEntry<T> = {
           v: next,
-          ...(ttl !== undefined ? { t: Date.now() } : {}),
+          ...(ttl !== undefined ? { t: nowFn() } : {}),
         };
         const serialized = stringify(entry);
-        lsWrite(key, encode ? encode(serialized) : serialized);
+        const raw = encode ? encode(serialized) : serialized;
+        lsWrite(storageKey, raw);
+        emitLocalSync(storageKey, raw);
+        if (ttl !== undefined) setExpiryTick((v) => v + 1);
         return next;
       });
     },
-    [key, ttl, encode, stringify]
+    [storageKey, ttl, nowFn, stringify, encode, setInternalState]
   );
 
-  // ── Remove / reset ────────────────────────────────────────────────────────
   const removeValue = useCallback(() => {
-    lsDelete(key);
+    lsDelete(storageKey);
+    emitLocalSync(storageKey, null);
+    if (ttl !== undefined) setExpiryTick((v) => v + 1);
     setInternalState(initialValue);
-  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [storageKey, ttl, initialValue, setInternalState]);
 
-  // ── Cross-tab sync ────────────────────────────────────────────────────────
   useEffect(() => {
     if (!isBrowser()) return;
 
-    const onStorage = (e: StorageEvent) => {
-      if (e.key !== key) return;
-      // null newValue means the key was deleted
-      if (e.newValue === null) {
-        setRef.current(initialValue);
+    const applySyncValue = (newValue: string | null) => {
+      if (newValue === null) {
+        setInternalState(initialValue);
         return;
       }
-      try {
-        const decoded = decode ? decode(e.newValue) : e.newValue;
-        const entry: StorageEntry<T> = parse(decoded);
-        if (ttl !== undefined && entry.t !== undefined) {
-          if (Date.now() > entry.t + ttl) return; // expired in other tab
-        }
-        setRef.current(entry.v);
-      } catch {
-        /* corrupted data from other tab — ignore */
+      const entry = parseStorageEntry(newValue, decode, parse);
+      if (entry === null) {
+        /* ignore invalid payloads */
+        return;
       }
+      if (ttl !== undefined && entry.t !== undefined && nowFn() >= entry.t + ttl) {
+        expireEntry(entry, false);
+        return;
+      }
+      touchSlidingTtl(entry);
+      setInternalState(entry.v);
+    };
+
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== storageKey) return;
+      applySyncValue(e.newValue);
+    };
+
+    const onLocalSync = (e: Event) => {
+      const detail = (e as CustomEvent<{ key: string; newValue: string | null }>).detail;
+      if (!detail || detail.key !== storageKey) return;
+      applySyncValue(detail.newValue);
     };
 
     window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, [key, ttl, decode, parse]); // eslint-disable-line react-hooks/exhaustive-deps
+    window.addEventListener(LOCAL_SYNC_EVENT, onLocalSync);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener(LOCAL_SYNC_EVENT, onLocalSync);
+    };
+  }, [storageKey, initialValue, decode, parse, ttl, nowFn, expireEntry, touchSlidingTtl]);
+
+  useEffect(() => {
+    if (ttl === undefined) return;
+
+    const raw = lsRead(storageKey);
+    if (raw === null) return;
+
+    const entry = parseStorageEntry(raw, decode, parse);
+    if (entry === null || entry.t === undefined) return;
+
+    const remaining = entry.t + ttl - nowFn();
+
+    const timeoutId = window.setTimeout(
+      () => {
+        const latestRaw = lsRead(storageKey);
+        if (latestRaw === null) return;
+        const latestEntry = parseStorageEntry(latestRaw, decode, parse);
+        if (latestEntry === null) {
+          lsDelete(storageKey);
+          return;
+        }
+        if (latestEntry.t === undefined) return;
+        if (nowFn() >= latestEntry.t + ttl) {
+          expireEntry(latestEntry, true);
+          return;
+        }
+        setExpiryTick((v) => v + 1);
+      },
+      remaining > 0 ? remaining : 0
+    );
+
+    return () => window.clearTimeout(timeoutId);
+  }, [state, expiryTick, storageKey, ttl, decode, parse, nowFn, expireEntry]);
 
   return [state, setState, removeValue];
 }

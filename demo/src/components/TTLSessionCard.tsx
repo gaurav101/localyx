@@ -1,62 +1,62 @@
 import { useState, useEffect } from 'react';
-import { useLocalStorageState } from '@gks101/localyx';
+import { useLocalStorageState, getRemainingTtl } from '@gks101/localyx';
+import type { TtlStrategy } from '@gks101/localyx';
 import { Settings, Clock } from 'lucide-react';
 import { CodeEditorView } from './CodeEditorView';
 
 export function TTLSessionCard() {
-  const TTL_MS = 5000; // 5 seconds for demo purposes
+  const TTL_MS = 5000;
+  const STORAGE_KEY = 'session_token';
+  const NAMESPACE = 'demo:v2';
+  const [strategy, setStrategy] = useState<TtlStrategy>('absolute');
+  const [expireCount, setExpireCount] = useState(0);
+
   const [sessionToken, setSessionToken, clearSession] = useLocalStorageState<string | null>(
-    'demo_session',
+    STORAGE_KEY,
     null,
     {
       ttl: TTL_MS,
+      ttlStrategy: strategy,
+      namespace: NAMESPACE,
+      onExpire: () => setExpireCount((count) => count + 1),
     }
   );
 
   const [progress, setProgress] = useState(0);
+  const [remainingMs, setRemainingMs] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!sessionToken) return;
-
-    // Try to get exactly when it was created to sync progress bar
-    const raw = localStorage.getItem('demo_session');
-    if (!raw) return;
-
-    try {
-      const decoded = decodeURIComponent(escape(atob(raw)));
-      const parsed = JSON.parse(decoded);
-      const timestamp = parsed.t;
-
-      const interval = setInterval(() => {
-        const now = Date.now();
-        const elapsed = now - timestamp;
-        const remaining = Math.max(0, TTL_MS - elapsed);
-
-        if (remaining <= 0) {
-          // Force a re-render/read to trigger the hook's internal TTL check
-          setSessionToken((prev: string | null) => prev);
-          clearInterval(interval);
-          setProgress(0);
-        } else {
-          setProgress((remaining / TTL_MS) * 100);
-        }
-      }, 50);
-      return () => clearInterval(interval);
-    } catch {
-      // Ignored for demo
+    if (!sessionToken) {
+      return;
     }
-  }, [sessionToken, setSessionToken]);
+
+    const updateRemaining = () => {
+      const remaining = getRemainingTtl(STORAGE_KEY, TTL_MS, { namespace: NAMESPACE });
+      if (remaining === null) {
+        setRemainingMs(null);
+        setProgress(0);
+        return;
+      }
+      setRemainingMs(remaining);
+      setProgress((remaining / TTL_MS) * 100);
+    };
+
+    updateRemaining();
+    const interval = window.setInterval(updateRemaining, 100);
+    return () => window.clearInterval(interval);
+  }, [sessionToken]);
 
   const generateSession = () => {
     setSessionToken(`token_${Math.random().toString(36).substring(2, 9)}`);
   };
 
-  const ttlCodeHTML = `<span class="token-keyword">import</span> <span class="token-punctuation">{</span> useLocalStorageState <span class="token-punctuation">}</span> <span class="token-keyword">from</span> <span class="token-string">'@gks101/localyx'</span><span class="token-punctuation">;</span>
-
-<span class="token-keyword">const</span> <span class="token-punctuation">[</span>session<span class="token-punctuation">,</span> setSession<span class="token-punctuation">]</span> <span class="token-punctuation">=</span> <span class="token-function">useLocalStorageState</span><span class="token-punctuation">&lt;</span><span class="token-type">string | null</span><span class="token-punctuation">&gt;(</span>
-  <span class="token-string">'demo_session'</span><span class="token-punctuation">,</span>
-  <span class="token-keyword">null</span><span className="token-punctuation">,</span>
-  <span class="token-punctuation">{</span> ttl<span class="token-punctuation">:</span> <span class="token-number">5000</span> <span class="token-punctuation">}</span> <span class="token-comment">// 5 seconds</span>
+  const ttlCodeHTML = `<span class="token-keyword">const</span> <span class="token-punctuation">[</span>token<span class="token-punctuation">,</span> setToken<span class="token-punctuation">]</span> <span class="token-punctuation">=</span> <span class="token-function">useLocalStorageState</span><span class="token-punctuation">(</span>
+  <span class="token-string">'session_token'</span><span class="token-punctuation">,</span> <span class="token-keyword">null</span><span class="token-punctuation">,</span> <span class="token-punctuation">{</span>
+    ttl<span class="token-punctuation">:</span> <span class="token-number">5000</span><span class="token-punctuation">,</span>
+    ttlStrategy<span class="token-punctuation">:</span> <span class="token-string">'absolute'</span><span class="token-punctuation">,</span>
+    namespace<span class="token-punctuation">:</span> <span class="token-string">'demo:v2'</span><span class="token-punctuation">,</span>
+    onExpire<span class="token-punctuation">:</span> <span class="token-punctuation">(</span><span class="token-punctuation">)</span> <span class="token-punctuation">=&gt;</span> <span class="token-function">logOut</span><span class="token-punctuation">(</span><span class="token-punctuation">)</span>
+  <span class="token-punctuation">}</span>
 <span class="token-punctuation">)</span><span class="token-punctuation">;</span>`;
 
   return (
@@ -67,10 +67,28 @@ export function TTLSessionCard() {
         </div>
         <h2>Time-To-Live (TTL)</h2>
       </div>
+
       <p style={{ color: '#94a3b8', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
-        Data automatically expires after a set duration. For this demo, sessions expire in exactly 5
-        seconds.
+        Sessions expire in 5 seconds. Switch strategy to compare absolute vs sliding TTL behavior.
       </p>
+
+      <div className="control-group">
+        <label>Expiry Strategy</label>
+        <div className="button-group" style={{ marginTop: 0, marginBottom: 0 }}>
+          <button
+            onClick={() => setStrategy('absolute')}
+            className={strategy === 'absolute' ? '' : 'danger'}
+          >
+            Absolute
+          </button>
+          <button
+            onClick={() => setStrategy('sliding')}
+            className={strategy === 'sliding' ? '' : 'danger'}
+          >
+            Sliding
+          </button>
+        </div>
+      </div>
 
       <div className="control-group">
         <label>Session Token</label>
@@ -79,9 +97,17 @@ export function TTLSessionCard() {
         </div>
         {sessionToken && (
           <div className="progress-container">
-            <div className="progress-fill" style={{ width: `${sessionToken ? progress : 0}%` }} />
+            <div className="progress-fill" style={{ width: `${progress}%` }} />
           </div>
         )}
+      </div>
+
+      <div className="control-group">
+        <label>Remaining TTL / Expiry Count</label>
+        <div className="value-display" style={{ fontSize: '0.85rem' }}>
+          {sessionToken && remainingMs !== null ? `${Math.ceil(remainingMs)} ms` : 'N/A'} | expired{' '}
+          {expireCount} time(s)
+        </div>
       </div>
 
       <div className="button-group">

@@ -1,4 +1,8 @@
 # @gks101/localyx
+[![npm version](https://img.shields.io/npm/v/@gks101/localyx.svg?style=flat-flat)](https://www.npmjs.com/package/@gks101/localyx)
+[![bundle size](https://img.shields.io/bundlephobia/minzip/@gks101/localyx?label=bundle%20size)](https://bundlephobia.com/package/@gks101/localyx)
+[![npm downloads](https://img.shields.io/npm/dm/@gks101/localyx.svg?style=flat-flat)](https://www.npmjs.com/package/@gks101/localyx)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A lightweight (<1kb gzip+minified )React hook for persistent `localStorage` state with TTL expiry, same-tab and cross-tab sync, and optional encoding/serialization controls.
 
